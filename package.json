@@ -1,0 +1,35 @@
+{
+  "name": "brief",
+  "version": "1.0.0",
+  "description": "Pre-meeting brief generation pipeline",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "db:migrate": "node scripts/migrate.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.0",
+    "@slack/web-api": "^7.8.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "axios": "^1.7.9",
+    "googleapis": "^146.0.0",
+    "lru-cache": "^11.0.0",
+    "openai": "^4.77.0",
+    "tldts": "^6.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@vercel/node": "^5.1.8",
+    "dotenv": "^16.4.0",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@10.0.0"
+}
