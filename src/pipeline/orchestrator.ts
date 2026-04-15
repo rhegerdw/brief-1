@@ -1,55 +1,33 @@
 import crypto from 'node:crypto';
-import { ENV } from '../config/env.js';
+import type { PipelineContext, HubSpotEventData } from './types.js';
 import {
-  type PipelineContext,
-  type CalendlyWebhookPayload,
-  type GoogleCalendarEvent,
-} from './types.js';
-import {
-  fetchEventDetails,
-  parseFormInputs,
+  extractEventDetails,
   inferDomainIndustry,
-  upsertCompanyMeeting,
   fetchQuestionTemplates,
   buildOrgName,
   generateMeetingBrief,
   rewriteQuestions,
-  persistBrief,
-  createBriefUrl,
-  sendSlackNotifications,
+  persistToHubSpot,
+  sendSlackNotification,
 } from './steps.js';
 
 /**
- * Validate Calendly webhook signature
+ * Validate HubSpot webhook signature (v3)
+ * https://developers.hubspot.com/docs/api/webhooks#security
  */
-export function validateCalendlySignature(rawBody: string, signatureHeader?: string): boolean {
-  if (!signatureHeader) return false;
+export function validateHubSpotSignature(
+  clientSecret: string,
+  method: string,
+  url: string,
+  rawBody: string,
+  timestamp: string,
+  signatureHeader: string,
+): boolean {
   try {
-    const sec = (ENV.CALENDLY_SIGNING_SECRET || '').toString();
-    const hHex = crypto.createHmac('sha256', sec).update(rawBody).digest('hex');
-    const hB64 = crypto.createHmac('sha256', sec).update(rawBody).digest('base64');
-    const raw = (signatureHeader || '').toString().trim();
-
-    // Accept common formats
-    const mSha = /sha256=([a-f0-9]+)/i.exec(raw);
-    const mV1 = /v1=([a-f0-9]+)/i.exec(raw);
-    const extracted = mSha?.[1] || mV1?.[1] || raw.replace(/^sha256=/i, '').trim();
-
-    if (extracted && extracted.length >= 20) {
-      return timingSafeEq(extracted.toLowerCase(), hHex.toLowerCase());
-    }
-    if (timingSafeEq(raw, hB64)) return true;
-    if (timingSafeEq(raw.toLowerCase(), hHex.toLowerCase())) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function timingSafeEq(a: string, b: string): boolean {
-  try {
-    const ba = Buffer.from(a);
-    const bb = Buffer.from(b);
+    const sourceString = method + url + rawBody + timestamp;
+    const hash = crypto.createHmac('sha256', clientSecret).update(sourceString).digest('base64');
+    const ba = Buffer.from(hash);
+    const bb = Buffer.from(signatureHeader);
     if (ba.length !== bb.length) return false;
     return crypto.timingSafeEqual(ba, bb);
   } catch {
@@ -70,115 +48,48 @@ function createLogger(prefix: string, requestId?: string) {
 }
 
 /**
- * Run the prebrief pipeline for a Calendly event
+ * Run the prebrief pipeline for a HubSpot-triggered event
  */
-export async function runCalendlyPipeline(payload: CalendlyWebhookPayload, requestId?: string) {
-  const log = createLogger('Calendly', requestId);
+export async function runHubSpotPipeline(event: HubSpotEventData, requestId?: string) {
+  const log = createLogger('HubSpot', requestId);
 
   let ctx: PipelineContext = {
-    source: 'calendly',
-    calendlyPayload: payload,
+    source: 'hubspot',
+    hubspotEvent: event,
     requestId,
     log,
   };
 
-  // Step 1: Fetch event details
-  ctx = await fetchEventDetails(ctx);
+  // Step 1: Extract event details from HubSpot data
+  ctx = extractEventDetails(ctx);
+  log.info(`Processing meeting for ${ctx.attendeeEmail} (${ctx.companyName || 'unknown company'})`);
 
-  // Skip cancelled events
-  if (ctx.eventDetails?.status === 'canceled' || ctx.eventDetails?.status === 'cancelled') {
-    console.log(`Skipping cancelled event ${ctx.eventUuid}`);
-    return { skipped: true, reason: 'event_cancelled', event_id: ctx.eventUuid };
-  }
-
-  // Step 2: Parse form inputs
-  ctx = parseFormInputs(ctx);
-
-  // Step 3: Infer domain and industry
+  // Step 2: Infer domain and industry
   ctx = await inferDomainIndustry(ctx);
 
-  // Step 4: Upsert company and meeting
-  ctx = await upsertCompanyMeeting(ctx);
+  // Step 3: Fetch question templates
+  ctx = fetchQuestionTemplates(ctx);
 
-  // Step 5: Fetch question templates
-  ctx = await fetchQuestionTemplates(ctx);
+  // Step 4: Build org name
+  ctx = buildOrgName(ctx);
 
-  // Step 6: Build org name
-  ctx = await buildOrgName(ctx);
-
-  // Step 7: Generate meeting brief
+  // Step 5: Generate meeting brief
   ctx = await generateMeetingBrief(ctx);
 
-  // Step 8: Rewrite questions
+  // Step 6: Rewrite questions
   ctx = await rewriteQuestions(ctx);
 
-  // Step 9: Persist brief
-  ctx = await persistBrief(ctx);
+  // Step 7: Persist to HubSpot (create Note on contact)
+  ctx = await persistToHubSpot(ctx);
 
-  // Step 10: Create brief URL
-  ctx = await createBriefUrl(ctx);
-
-  // Step 11: Send Slack notifications
-  ctx = await sendSlackNotifications(ctx);
+  // Step 8: Send Slack notification
+  ctx = await sendSlackNotification(ctx);
 
   return {
-    meeting_id: ctx.meetingId,
-    company_id: ctx.companyId,
-    industry_key: ctx.industryKey,
-    linkUrl: ctx.linkUrl,
-  };
-}
-
-/**
- * Run the prebrief pipeline for a Google Calendar event
- */
-export async function runGoogleCalendarPipeline(event: GoogleCalendarEvent, requestId?: string) {
-  const log = createLogger('GoogleCalendar', requestId);
-
-  let ctx: PipelineContext = {
-    source: 'google',
-    googleEvent: event,
-    requestId,
-    log,
-  };
-
-  // Step 1: Parse event details (for Google, this normalizes the event)
-  ctx = await fetchEventDetails(ctx);
-
-  // Step 2: Parse form inputs (for Google, extracts territory from email)
-  ctx = parseFormInputs(ctx);
-
-  // Step 3: Infer domain and industry
-  ctx = await inferDomainIndustry(ctx);
-
-  // Step 4: Upsert company and meeting
-  ctx = await upsertCompanyMeeting(ctx);
-
-  // Step 5: Fetch question templates
-  ctx = await fetchQuestionTemplates(ctx);
-
-  // Step 6: Build org name
-  ctx = await buildOrgName(ctx);
-
-  // Step 7: Generate meeting brief
-  ctx = await generateMeetingBrief(ctx);
-
-  // Step 8: Rewrite questions
-  ctx = await rewriteQuestions(ctx);
-
-  // Step 9: Persist brief
-  ctx = await persistBrief(ctx);
-
-  // Step 10: Create brief URL
-  ctx = await createBriefUrl(ctx);
-
-  // Step 11: Send Slack notifications
-  ctx = await sendSlackNotifications(ctx);
-
-  return {
-    meeting_id: ctx.meetingId,
-    company_id: ctx.companyId,
-    industry_key: ctx.industryKey,
-    linkUrl: ctx.linkUrl,
+    hubspotContactId: ctx.hubspotContactId,
+    hubspotMeetingId: ctx.hubspotMeetingId,
+    hubspotNoteId: ctx.hubspotNoteId,
+    industryKey: ctx.industryKey,
+    orgName: ctx.orgName,
   };
 }

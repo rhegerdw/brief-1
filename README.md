@@ -2,21 +2,28 @@
 
 > Pre-meeting brief generation pipeline for sales teams
 
-Generate research briefs before meetings by automatically pulling company information, LinkedIn data, and relevant news when calendar events are created.
+Generate research briefs before meetings by automatically pulling company information, LinkedIn data, and relevant news when calendar events sync to HubSpot.
+
+## How It Works
+
+```
+Google Calendar → HubSpot (native sync) → Workflow Webhook → Pipeline → Brief (HubSpot Note) + Slack DM
+```
+
+1. A sales rep creates or accepts a meeting on Google Calendar
+2. HubSpot's native Google Calendar integration syncs the meeting to the contact record
+3. A HubSpot workflow fires and sends a webhook to this app
+4. The pipeline researches the attendee's company and generates a brief
+5. The brief is saved as a **Note on the HubSpot contact** (permanent CRM record)
+6. A **Slack DM** notifies the rep that the brief is ready
 
 ## Features
 
-- **Multi-source calendar support** - Calendly webhooks, Google Calendar API, or Google Apps Script
-- **Automated research** - Serper (Google search), Firecrawl (web scraping), Harvest (LinkedIn)
-- **LLM-powered briefs** - GPT-5-mini generates 3-5 bullet executive summaries
-- **Slack notifications** - Instant delivery to channels and DMs
-- **Industry-specific questions** - Pre-loaded discovery questions by vertical
-
-## Architecture
-
-```
-Calendar Event → Webhook → 15-Step Pipeline → Brief + Slack Notification
-```
+- **HubSpot-native** — briefs live on contact records in your CRM
+- **Automated research** — Serper (Google search), Firecrawl (web scraping), Harvest (LinkedIn)
+- **LLM-powered briefs** — AI-generated executive summaries
+- **Slack notifications** — instant DM when a brief is ready
+- **Industry-specific questions** — pre-loaded discovery questions by vertical
 
 ## Quick Start
 
@@ -32,104 +39,74 @@ pnpm install
 cp .env.example .env.local
 # Edit .env.local with your API keys
 
-# Run migrations
-pnpm db:migrate
-
 # Dev
 pnpm dev
 ```
 
-## Documentation
+## HubSpot Setup
 
-| Document | Description |
-|----------|-------------|
-| [PORTING_PLAN.md](./PORTING_PLAN.md) | Complete porting plan from OutSearched |
-| [docs/GOOGLE_CALENDAR_INTEGRATION.md](./docs/GOOGLE_CALENDAR_INTEGRATION.md) | Google Calendar setup guide |
+### 1. Private App
 
-## Calendar Integration Options
+Create a Private App in HubSpot (Settings → Integrations → Private Apps) with scopes:
+- `crm.objects.contacts.read`
+- `crm.objects.notes.write`
+- `crm.objects.notes.read`
+- `crm.objects.meetings.read`
 
-### Option 1: Calendly (Recommended for booking pages)
+### 2. Google Calendar Sync
 
-1. Create webhook in Calendly dashboard
-2. Point to `POST /api/webhooks/calendly`
-3. Set `CALENDLY_SIGNING_SECRET`
+Connect rep Google Calendar accounts in HubSpot (Settings → Integrations → Google Calendar).
 
-### Option 2: Google Calendar API
+### 3. Workflow
 
-1. Create Google Cloud project
-2. Enable Calendar API
-3. Configure OAuth
-4. Register watch channels
-
-See [Google Calendar Integration Guide](./docs/GOOGLE_CALENDAR_INTEGRATION.md)
-
-### Option 3: Google Apps Script
-
-1. Deploy Apps Script to Workspace
-2. Create calendar trigger
-3. Configure webhook secret
-
-See [Apps Script section](./docs/GOOGLE_CALENDAR_INTEGRATION.md#approach-2-google-apps-script)
+Create a workflow in HubSpot (Automation → Workflows):
+- **Enrollment trigger:** Meeting activity logged
+- **Action:** Send a webhook → `POST https://<your-domain>/api/webhooks/hubspot`
 
 ## Environment Variables
 
 ```bash
 # Required
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-OPENAI_API_KEY=
-SERPER_API_KEY=
+HUBSPOT_ACCESS_TOKEN=       # Private App token
+OPENAI_API_KEY=             # For LLM brief generation
+
+# HubSpot (optional)
+HUBSPOT_CLIENT_SECRET=      # For webhook signature validation
+HUBSPOT_PORTAL_ID=          # Portal ID
+
+# Slack (optional)
 SLACK_BOT_TOKEN=
+SLACK_CEO_USER_ID=          # User ID to receive brief DMs
 
-# Calendly (if using)
-CALENDLY_SIGNING_SECRET=
-
-# Google Calendar (if using)
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-
-# Optional
+# Research APIs (optional)
+SERPER_API_KEY=
 FIRECRAWL_KEY=
 HARVEST_API_KEY=
+
+# AI (optional)
+ANTHROPIC_API_KEY=
+GOOGLE_API_KEY=             # For Gemini
 ```
 
 ## Pipeline Steps
 
 | # | Step | Description |
 |---|------|-------------|
-| 1 | fetchEventDetails | Fetch event from calendar API |
-| 2 | parseFormInputs | Extract company/website from intake form |
-| 3 | inferDomainIndustry | LLM classification of industry |
-| 4 | upsertCompanyMeeting | Create database records |
-| 5 | recordArtifacts | Store debug metadata |
-| 6 | fetchQuestionTemplates | Load industry-specific questions |
-| 7 | buildOrgName | Clean organization name |
-| 8 | generateMeetingBrief | Run research pipeline |
-| 9 | harvestEnrichment | LinkedIn data enrichment |
-| 10 | rewriteQuestions | Improve question wording |
-| 11 | scoreMandates | Match against buyer criteria (optional) |
-| 12 | prefetchSmartlead | Cache email context (optional) |
-| 13 | persistBrief | Save to database |
-| 14 | createBriefUrl | Generate view URL |
-| 15 | sendSlackNotifications | Post to Slack |
+| 1 | extractEventDetails | Normalize HubSpot contact + meeting data |
+| 2 | inferDomainIndustry | Extract domain from email, classify industry |
+| 3 | fetchQuestionTemplates | Load industry-specific discovery questions |
+| 4 | buildOrgName | Clean organization name for display |
+| 5 | generateMeetingBrief | Run research pipeline (Serper → Firecrawl → LLM) |
+| 6 | rewriteQuestions | LLM-refine question wording |
+| 7 | persistToHubSpot | Create Note on HubSpot contact with brief |
+| 8 | sendSlackNotification | DM the rep via Slack |
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/webhooks/calendly` | POST | Calendly webhook receiver |
-| `/api/webhooks/google-calendar` | POST | Google Calendar push notification |
-| `/api/webhooks/apps-script` | POST | Apps Script webhook receiver |
-| `/api/view/brief` | GET | HTML brief viewer |
-| `/api/internal/refresh-watch` | POST | Renew Google Calendar channels |
-
-## Database Schema
-
-```sql
-companies (id, name, domain, territory, state)
-meetings (id, company_id, attendee_email, starts_at, source)
-meetingbrief_results (meeting_id, brief_html, citations, metrics)
-```
+| `/api/webhooks/hubspot` | POST | HubSpot workflow webhook receiver |
+| `/api/health` | GET | Health check |
 
 ## License
 

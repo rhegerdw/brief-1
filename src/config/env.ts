@@ -1,21 +1,10 @@
 import { z } from "zod";
 
 const EnvSchema = z.object({
-  // Database (Required)
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
-
-  // Calendar: Calendly
-  CALENDLY_SIGNING_SECRET: z.string().optional(),
-  CALENDLY_API_KEY: z.string().optional(),
-
-  // Calendar: Google
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().url().optional(),
-
-  // Calendar: Apps Script
-  APPS_SCRIPT_SECRET: z.string().optional(),
+  // HubSpot
+  HUBSPOT_ACCESS_TOKEN: z.string().min(1),
+  HUBSPOT_CLIENT_SECRET: z.string().optional(),
+  HUBSPOT_PORTAL_ID: z.string().optional(),
 
   // Slack
   SLACK_BOT_TOKEN: z.string().optional(),
@@ -31,7 +20,7 @@ const EnvSchema = z.object({
 
   // Research APIs
   SERPER_API_KEY: z.string().optional(),
-  SERPER_KEY: z.string().optional(), // Alternative name
+  SERPER_KEY: z.string().optional(),
   FIRECRAWL_KEY: z.string().optional(),
   FIRECRAWL_MAX_CONCURRENCY: z.string().optional(),
   HARVEST_API_KEY: z.string().optional(),
@@ -39,7 +28,7 @@ const EnvSchema = z.object({
 
   // App Config
   PUBLIC_BASE_URL: z.string().optional(),
-  INTERNAL_DOMAINS: z.string().optional(), // Comma-separated internal domains for Google Calendar filtering
+  INTERNAL_DOMAINS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -64,4 +53,5 @@ export const ENV = loadEnv();
 export const FLAGS = {
   publicBaseUrl: process.env.PUBLIC_BASE_URL,
   slackEnabled: (process.env.SLACK_ENABLED ?? 'true').toLowerCase() !== 'false',
+  hubspotEnabled: (process.env.HUBSPOT_ENABLED ?? 'true').toLowerCase() !== 'false',
 };

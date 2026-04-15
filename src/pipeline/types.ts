@@ -1,51 +1,23 @@
-import type { CalendlyQA } from '../integrations/calendly/parser.js';
-
 /**
  * Calendar event source type
  */
-export type CalendarSource = 'calendly' | 'google' | 'manual';
+export type CalendarSource = 'hubspot' | 'manual';
 
 /**
- * Calendly webhook payload types
+ * HubSpot-sourced event data (normalized from HubSpot contact + meeting)
  */
-export interface CalendlyInvitee {
-  name?: string;
-  email?: string;
-}
-
-export interface CalendlyEvent {
-  uuid?: string;
-  start_time?: string;
-  end_time?: string;
-  name?: string;
-  status?: string;
-  join_url?: string | null;
-}
-
-export interface CalendlyWebhookInnerPayload {
-  event?: CalendlyEvent;
-  invitee?: CalendlyInvitee;
-  questions_and_answers?: CalendlyQA[];
-}
-
-export interface CalendlyWebhookPayload {
-  payload?: CalendlyWebhookInnerPayload;
-}
-
-/**
- * Google Calendar event (from sync or Apps Script)
- */
-export interface GoogleCalendarEvent {
-  eventId: string;
-  summary?: string;
-  start: string;
-  end?: string;
-  attendee: {
-    email: string;
-    name?: string;
-  };
-  hangoutLink?: string;
+export interface HubSpotEventData {
+  contactId: string;
+  meetingId: string;
+  attendeeEmail: string;
+  attendeeName?: string;
+  companyName?: string;
+  companyDomain?: string;
+  meetingTitle?: string;
+  meetingStartTime?: string;
+  meetingEndTime?: string;
   conferenceLink?: string;
+  ownerEmail?: string;
 }
 
 /**
@@ -58,25 +30,6 @@ export interface EventDetails {
   name?: string;
   status?: string;
   join_url?: string | null;
-}
-
-/**
- * Meeting payload for database upsert
- */
-export interface MeetingPayload {
-  external_event_id?: string;
-  attendee_email?: string;
-  attendee_name?: string;
-  start_time?: string;
-  join_url?: string | null;
-  questions_and_answers?: CalendlyQA[];
-  industry_key?: string;
-  company_name?: string;
-  website?: string;
-  domain?: string;
-  territory?: string;
-  state?: string;
-  source?: CalendarSource;
 }
 
 /**
@@ -106,22 +59,19 @@ export interface PipelineContext {
   source: CalendarSource;
   requestId?: string;
 
-  // Raw payloads (one will be set based on source)
-  calendlyPayload?: CalendlyWebhookPayload;
-  googleEvent?: GoogleCalendarEvent;
+  // HubSpot data
+  hubspotEvent?: HubSpotEventData;
+  hubspotContactId?: string;
+  hubspotMeetingId?: string;
+  hubspotNoteId?: string;
 
   // Normalized event details
   eventDetails?: EventDetails;
-  eventUuid?: string;
 
-  // Form/intake data
-  qas?: CalendlyQA[];
+  // Attendee/company info
   attendeeEmail?: string;
   attendeeName?: string;
-  companyNameFromForm?: string;
-  websiteFromForm?: string;
-  normalizedFormDomain?: string | null;
-  websiteLooksValid?: boolean;
+  companyName?: string;
 
   // Inferred data
   inferred?: {
@@ -138,32 +88,16 @@ export interface PipelineContext {
   territorySource?: 'company_name' | 'email_subdomain' | 'email_domain_city' | 'inferred';
   territoryConfidence?: 'high' | 'medium' | 'low';
 
-  // Database IDs
-  companyId?: string;
-  meetingId?: string;
-
-  // Company/meeting data
-  companyRow?: { name?: string; location?: string };
-  meetingPayload?: MeetingPayload;
-
   // Question templates
   questionsRaw?: string[];
   rewrittenQuestions?: string[];
 
-  // Org/attendee info
+  // Org/attendee display info
   orgName?: string;
   displayName?: string;
-  knownRole?: string | null;
-  pinnedUrl?: string | null;
 
   // Brief result
   briefResult?: BriefResult;
-
-  // Enrichment
-  hqLocation?: string;
-
-  // Output URLs
-  linkUrl?: string;
 
   // Logging
   log: PipelineLogger;

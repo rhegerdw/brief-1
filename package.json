@@ -11,15 +11,13 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
-    "db:migrate": "node scripts/migrate.js"
+    "typecheck:watch": "tsc --noEmit --watch"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.0",
     "@slack/web-api": "^7.8.0",
-    "@supabase/supabase-js": "^2.49.1",
     "axios": "^1.7.9",
-    "googleapis": "^146.0.0",
     "lru-cache": "^11.0.0",
     "openai": "^4.77.0",
     "tldts": "^6.1.0",
