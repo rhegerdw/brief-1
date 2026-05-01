@@ -10,6 +10,7 @@ import { humanizeOrgFromDomain, normalizeDomain, isFreeEmailDomain } from '../ut
 import { getQuestionsForIndustry } from '../data/questionTemplates.js';
 import { createNote } from '../integrations/hubspot/client.js';
 import { sendPrebrief } from '../integrations/slack/sendPrebrief.js';
+import { buildMeetingBrief } from '../brief/index.js';
 import type { PipelineContext } from './types.js';
 
 // ============================================================
@@ -49,8 +50,8 @@ export async function inferDomainIndustry(ctx: PipelineContext): Promise<Pipelin
   const emailDomain = ctx.attendeeEmail?.split('@')[1] || '';
 
   // Prefer company domain from HubSpot, fall back to email domain
-  let domain = ctx.hubspotEvent?.companyDomain
-    ? normalizeDomain(ctx.hubspotEvent.companyDomain)
+  let domain: string | undefined = ctx.hubspotEvent?.companyDomain
+    ? (normalizeDomain(ctx.hubspotEvent.companyDomain) || undefined)
     : undefined;
 
   if (!domain && emailDomain && !isFreeEmailDomain(emailDomain)) {
@@ -108,30 +109,55 @@ export function buildOrgName(ctx: PipelineContext): PipelineContext {
 }
 
 // ============================================================
-// STEP 5: Generate Meeting Brief (placeholder)
+// STEP 5: Generate Meeting Brief
 // ============================================================
 
 export async function generateMeetingBrief(ctx: PipelineContext): Promise<PipelineContext> {
-  // Placeholder. In production: Serper search → Firecrawl scrape → LLM generate
-  const briefHtml = `
-    <h2>Meeting Brief: ${ctx.orgName || 'Unknown Company'}</h2>
-    <p><strong>Attendee:</strong> ${ctx.attendeeName || ctx.attendeeEmail}</p>
-    <p><strong>Domain:</strong> ${ctx.inferred?.domain || 'Not found'}</p>
-    <p><strong>Industry:</strong> ${ctx.industryKey || 'Other'}</p>
-    ${ctx.territory ? `<p><strong>Territory:</strong> ${ctx.territory}, ${ctx.territoryState}</p>` : ''}
-    <hr>
-    <p><em>Implement your research pipeline (Serper + Firecrawl + LLM) to generate detailed briefs.</em></p>
-  `;
+  const name = (ctx.attendeeName || '').trim();
+  const org = (ctx.orgName || '').trim();
 
-  return {
-    ...ctx,
-    briefResult: {
-      brief_html: briefHtml,
-      citations: [],
-      metrics: {},
-      sources: [],
-    },
-  };
+  if (!name || !org) {
+    ctx.log.warn(`Skipping brief generation — missing name (${!!name}) or org (${!!org})`);
+    return {
+      ...ctx,
+      briefResult: {
+        brief_html: `<p><em>Insufficient data to generate a brief (missing ${!name ? 'attendee name' : 'org name'}).</em></p>`,
+        citations: [],
+        metrics: {},
+        sources: [],
+      },
+    };
+  }
+
+  try {
+    const opts: Parameters<typeof buildMeetingBrief>[2] = { log: ctx.log };
+    if (ctx.hubspotEvent?.linkedinUrl) opts.linkedinUrl = ctx.hubspotEvent.linkedinUrl;
+    if (ctx.inferred?.domain) opts.domain = ctx.inferred.domain;
+    if (ctx.attendeeEmail) opts.email = ctx.attendeeEmail;
+
+    const brief = await buildMeetingBrief(name, org, opts);
+
+    return {
+      ...ctx,
+      briefResult: {
+        brief_html: brief.brief_html,
+        citations: brief.citations.map((c) => ({ url: c.url, title: c.title })),
+        metrics: brief.metrics as unknown as Record<string, unknown>,
+        sources: brief.sources,
+      },
+    };
+  } catch (e) {
+    ctx.log.error('buildMeetingBrief failed', e);
+    return {
+      ...ctx,
+      briefResult: {
+        brief_html: `<p><em>Brief generation failed: ${e instanceof Error ? e.message : String(e)}.</em></p>`,
+        citations: [],
+        metrics: {},
+        sources: [],
+      },
+    };
+  }
 }
 
 // ============================================================

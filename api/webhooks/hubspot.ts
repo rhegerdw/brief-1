@@ -82,6 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         meetingStartTime: meeting.properties.hs_meeting_start_time || undefined,
         meetingEndTime: meeting.properties.hs_meeting_end_time || undefined,
         conferenceLink: meeting.properties.hs_meeting_external_url || undefined,
+        linkedinUrl: contact.properties.hs_linkedin_url || undefined,
       };
 
       // Run the pipeline

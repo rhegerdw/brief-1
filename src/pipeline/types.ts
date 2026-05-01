@@ -1,3 +1,5 @@
+import type { HarvestProfile } from '../integrations/harvest/client.js';
+
 /**
  * Calendar event source type
  */
@@ -18,6 +20,8 @@ export interface HubSpotEventData {
   meetingEndTime?: string;
   conferenceLink?: string;
   ownerEmail?: string;
+  /** LinkedIn profile URL pulled from the HubSpot contact (skips Harvest search). */
+  linkedinUrl?: string;
 }
 
 /**
@@ -87,6 +91,9 @@ export interface PipelineContext {
   territoryState?: string;
   territorySource?: 'company_name' | 'email_subdomain' | 'email_domain_city' | 'inferred';
   territoryConfidence?: 'high' | 'medium' | 'low';
+
+  // Person enrichment (Harvest/LinkedIn)
+  personProfile?: HarvestProfile;
 
   // Question templates
   questionsRaw?: string[];

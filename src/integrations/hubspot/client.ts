@@ -32,7 +32,7 @@ export async function fetchContact(contactId: string): Promise<HubSpotContact> {
     {
       headers: headers(),
       params: {
-        properties: 'email,firstname,lastname,company,domain,hubspot_owner_id',
+        properties: 'email,firstname,lastname,company,domain,hubspot_owner_id,hs_linkedin_url',
       },
     },
   );
